@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- Copyright Gemini+JCC 2025 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reto de la Dama</title>
+    <!-- Incluye Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome (v6.5.2) for piece and icon buttons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Tone.js for simple sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Confetti Library -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.js"></script>
+
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // Updated board colors
+                        'chess-light': '#d1d5db', // Light Gray (Gray-300)
+                        'chess-dark': '#3b82f6', // Royal Blue (Blue-500)
+                        
+                        // New colors for status boxes
+                        'status-score': '#f59e0b', // Amber-500
+                        'status-level': '#10b981', // Emerald-500
+                        'status-moves': '#3b82f6', // Blue-500
+                        'status-lives': '#374151', // Gray-700 
+                        'selected': '#8b5cf6', // Violet-500 for Queen selection
+                        'heart-piece': '#f87171', // Red-400 for heart piece
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1e293b; /* Dark background */
+        }
+        .chessboard-container {
+            max-width: 90vmin; 
+            width: 100%;
+            margin: 0 auto;
+        }
+        .chessboard-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            aspect-ratio: 1 / 1; 
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+            border: 8px solid #334155;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 5vmin; 
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 0.2s, transform 0.1s;
+            position: relative;
+        }
+        
+        /* Apply transition to the piece for smooth movement */
+        .piece {
+            line-height: 1; 
+            cursor: pointer;
+            pointer-events: none; 
+            transition: all 0.2s ease-in-out; 
+        }
+        
+        /* Styles for highlight dots/circles */
+        .highlight::after {
+            content: '';
+            position: absolute;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        /* Highlight for empty squares (Dot) - Green */
+        .highlight-move::after {
+            background-color: #10b981; /* Emerald-500 */
+            width: 30%;
+            height: 30%;
+            border-radius: 50%;
+            opacity: 0.8;
+            z-index: 10;
+        }
+        /* Highlight for capture squares (Ring/Outline) - Red */
+        .highlight-capture::after {
+            border: 0.5vmin solid #ef4444; /* Red-500 border around the capture area */
+            width: 90%;
+            height: 90%;
+            border-radius: 4px; 
+            opacity: 0.6;
+            z-index: 10;
+        }
+        
+        /* Pulse animation for loss visualization */
+        @keyframes pulse-red {
+          0%, 100% { background-color: rgba(239, 68, 68, 0.5); }
+          50% { background-color: rgba(239, 68, 68, 0.9); }
+        }
+        .attacker-flash {
+            animation: pulse-red 0.75s 2; 
+        }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center min-h-screen">
+
+    <div class="max-w-xl w-full">
+        <h1 class="text-4xl font-extrabold text-white text-center mb-6">
+            Reto de la Dama
+        </h1>
+        
+        <!-- Controls and Status Container -->
+        <div class="flex flex-col space-y-3 mb-4">
+            
+            <!-- Row 1: Controls (Reset, Info, Sound, Sound Selector) -->
+            <div class="flex justify-between items-center space-x-3 p-3 bg-gray-800 rounded-xl shadow-inner">
+                
+                <!-- Group 1: Reset Buttons (Left) -->
+                <div class="flex space-x-2">
+                    <button id="reset-button" title="Reiniciar Nivel Actual y Vidas (3)" class="p-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition duration-150 shadow-md flex items-center space-x-1 text-sm">
+                        <i class="fas fa-undo"></i>
+                        <span class="hidden sm:inline">Nivel</span>
+                    </button>
+                    <button id="reset-game-button" title="Reiniciar Juego (Nivel 1 y Puntuación 10)" class="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition duration-150 shadow-md flex items-center space-x-1 text-sm">
+                        <i class="fas fa-redo"></i>
+                        <span class="hidden sm:inline">Juego</span>
+                    </button>
+                </div>
+
+                <!-- Group 2: Info Button (Center) -->
+                <button id="info-button" title="Mostrar Instrucciones del Juego" class="p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition duration-150 shadow-md">
+                    <i class="fas fa-info-circle"></i>
+                </button>
+                
+                <!-- Group 3: Sound and Threat Control (Right) -->
+                <div class="flex space-x-2">
+                    <!-- Threat Toggle Button (Eye Icon) -->
+                    <button id="threat-toggle-button" title="Señalar Amenazas (Naranja)" class="p-2 bg-lime-500 hover:bg-lime-600 text-gray-900 rounded-lg transition duration-150 shadow-md">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <!-- Sound Toggle Button -->
+                    <button id="sound-toggle-button" title="Activar/Desactivar Sonido" class="p-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition duration-150 shadow-md">
+                        <i id="sound-icon" class="fas fa-volume-up"></i>
+                    </button>
+                    <!-- Sound Selector -->
+                    <select id="sound-set-selector" class="p-2 bg-gray-700 text-white rounded-lg text-sm transition duration-150 shadow-md hidden sm:inline-block">
+                        <option value="classic">Clásico</option>
+                        <option value="retro">Retro</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Row 2: Status Boxes (Score, Level, Moves, Lives) -->
+            <div class="grid grid-cols-4 gap-3">
+                <!-- Score Panel (Amber) -->
+                <div class="bg-status-score p-3 rounded-xl shadow-lg text-center text-white col-span-1">
+                    <p class="text-xs font-light uppercase opacity-90">PUNTOS</p>
+                    <p id="score-display" class="text-xl font-bold">0</p>
+                </div>
+                <!-- Level Panel (Emerald) -->
+                <div class="bg-status-level p-3 rounded-xl shadow-lg text-center text-white col-span-1">
+                    <p class="text-xs font-light uppercase opacity-90">NIVEL</p>
+                    <p id="level-display" class="text-xl font-bold">1</p>
+                </div>
+                <!-- Moves Panel (Blue) -->
+                <div class="bg-status-moves p-3 rounded-xl shadow-lg text-center text-white col-span-1">
+                    <p class="text-xs font-light uppercase opacity-90">MOV.</p>
+                    <p id="moves-display" class="text-xl font-bold">0</p>
+                </div>
+                <!-- Lives Panel (Gray-700 for contrast) -->
+                <div class="bg-status-lives p-3 rounded-xl shadow-lg text-center text-white col-span-1">
+                    <p class="text-xs font-light uppercase opacity-90">VIDAS</p>
+                    <!-- The lives display now shows the count with hearts -->
+                    <p id="lives-display" class="text-base font-bold flex justify-center items-center h-full -mt-2 space-x-1"></p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Chessboard -->
+        <div class="chessboard-container">
+            <div id="chessboard" class="chessboard-grid">
+                <!-- Squares generated here by JavaScript -->
+            </div>
+        </div>
+        
+        <!-- Message Modal (Used for Win/Error/Instructions) -->
+        <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 hidden z-50">
+            <div id="message-box" class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center">
+                <h3 id="modal-title" class="text-2xl font-bold mb-3 text-gray-800"></h3>
+                <p id="modal-message" class="mb-5 text-gray-600"></p>
+                <button id="modal-close-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 w-full">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONSTANTS AND CONFIGURATION ---
+        
+        const PIECES = {
+            WHITE_QUEEN: 'fas fa-chess-queen', 
+            BLACK_PAWN: 'fas fa-chess-pawn', 
+            BLACK_BISHOP: 'fas fa-chess-bishop',
+            BLACK_KNIGHT: 'fas fa-chess-knight',
+            BLACK_ROOK: 'fas fa-chess-rook',
+            HEART: 'fas fa-heart', // New piece type for extra life
+            EMPTY: ''
+        };
+
+        const ENEMY_PIECES = [
+            PIECES.BLACK_PAWN, 
+            PIECES.BLACK_BISHOP, 
+            PIECES.BLACK_KNIGHT, 
+            PIECES.BLACK_ROOK
+        ];
+        
+        // In v5, we do not have specific blocker pieces (like the White Pawn Blocker)
+        const BLOCKER_PIECES = []; 
+
+        const PIECE_VALUES = {
+            [PIECES.BLACK_PAWN]: 1,
+            [PIECES.BLACK_BISHOP]: 3,
+            [PIECES.BLACK_KNIGHT]: 3,
+            [PIECES.BLACK_ROOK]: 5,
+            [PIECES.HEART]: 10, // Heart gives a score bonus
+        };
+
+        const STARTING_SCORE = 10;
+        const SCORE_PER_MOVE = -1; // Penalty for non-capture move
+        const STARTING_LIVES = 3; // Total lives for the entire game
+
+        const COLOR_MOVE = 'highlight-move'; 
+        const COLOR_CAPTURE = 'highlight-capture'; 
+        const COLOR_THREATENED = '#f97316'; // Orange-500
+        
+        const SOUND_SETS = {
+            classic: {
+                oscillatorType: "sine",
+                envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.5 },
+                move: ["C5", "16n"],
+                capture: ["C5", "E5", "G5"],
+                error: ["F#2"],
+                defeat: ["C3", "Eb3", "G3"],
+                victory: [["C5", "E5", "G5"], ["F5", "A5", "C6"], ["G5", "B5", "D6"]],
+                lifeUp: ["C6", "E6", "G6", "16n"] 
+            },
+            retro: {
+                oscillatorType: "square",
+                envelope: { attack: 0.01, decay: 0.05, sustain: 0.01, release: 0.3 },
+                move: ["E6", "32n"],
+                capture: ["D5", "F5", "A5"], 
+                error: ["C3"],
+                defeat: ["D2", "Gb2", "A2"], 
+                victory: [["G5", "B5", "D6"], ["E6", "G#6", "B6"], ["A6", "C#7", "E7"]], 
+                lifeUp: ["G6", "B6", "D7", "16n"]
+            }
+        };
+
+        // --- GAME STATE ---
+        let boardState = {};
+        let queenPosition = '';
+        let currentLevelIndex = 0; 
+        let currentLevelData = null; 
+        let movesCount = 0;
+        let totalScore = STARTING_SCORE; 
+        let lives = STARTING_LIVES; 
+        let isGameReady = false;
+        let currentSoundSet = 'classic';
+        let isHelpActive = false; 
+        let scoreAtStartOfLevel = STARTING_SCORE; 
+        
+        let selectedSquareId = null;
+
+        // --- TONE.JS SOUND SETUP ---
+        let isSoundOn = true;
+        const reverb = new Tone.Reverb(2).toDestination(); 
+        const synth = new Tone.PolySynth(Tone.Synth).connect(reverb);
+        
+        function setSynthProperties() {
+            const set = SOUND_SETS[currentSoundSet];
+            synth.set({
+                oscillator: { type: set.oscillatorType },
+                envelope: set.envelope
+            });
+        }
+
+        function playSound(type) {
+            if (!isSoundOn) return;
+            if (Tone.context.state !== 'running') { Tone.start(); }
+
+            const set = SOUND_SETS[currentSoundSet];
+            
+            if (type === 'move') {
+                synth.triggerAttackRelease(set.move[0], set.move[1]);
+            } else if (type === 'capture') {
+                synth.triggerAttackRelease(set.capture, "16n", Tone.now(), 0.5); 
+            } else if (type === 'error') {
+                 synth.triggerAttackRelease(set.error[0], "16n");
+            } else if (type === 'defeat') {
+                 synth.triggerAttackRelease(set.defeat, "0.5");
+            } else if (type === 'victory') {
+                 const now = Tone.now();
+                 for (let i = 0; i < set.victory.length; i++) {
+                     synth.triggerAttackRelease(set.victory[i], "8n", now + i * 0.2);
+                 }
+            } else if (type === 'lifeUp') {
+                 synth.triggerAttackRelease(set.lifeUp[0], set.lifeUp[3]);
+            }
+        }
+
+
+        function triggerConfetti() {
+            if (typeof confetti !== 'undefined') {
+                const defaults = {
+                    startVelocity: 30, spread: 360, ticks: 60, zIndex: 100
+                };
+                confetti(Object.assign({}, defaults, { particleCount: 80, origin: { x: 0.2, y: 1.0 } }));
+                confetti(Object.assign({}, defaults, { particleCount: 80, origin: { x: 0.8, y: 1.0 } }));
+            }
+        }
+
+
+        // --- DOM REFERENCES ---
+        const chessboardElement = document.getElementById('chessboard');
+        const levelDisplay = document.getElementById('level-display');
+        const movesDisplay = document.getElementById('moves-display');
+        const scoreDisplay = document.getElementById('score-display'); 
+        const livesDisplay = document.getElementById('lives-display'); 
+        const resetButton = document.getElementById('reset-button'); 
+        const resetGameButton = document.getElementById('reset-game-button'); 
+        const soundToggleButton = document.getElementById('sound-toggle-button');
+        const threatToggleButton = document.getElementById('threat-toggle-button'); 
+        const soundIcon = document.getElementById('sound-icon');
+        const messageModal = document.getElementById('message-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalCloseButton = document.getElementById('modal-close-button');
+        const soundSetSelector = document.getElementById('sound-set-selector');
+        const infoButton = document.getElementById('info-button'); 
+
+
+        // --- BOARD UTILITIES & ATTACK LOGIC ---
+
+        function getCoords(squareId) {
+            if (!squareId) return null;
+            const file = squareId.charCodeAt(0) - 'a'.charCodeAt(0);
+            const rank = 8 - parseInt(squareId[1]);
+            if (rank >= 0 && rank < 8 && file >= 0 && file < 8) {
+                return [rank, file];
+            }
+            return null;
+        }
+
+        function getSquareId(rank, file) {
+            if (rank < 0 || rank > 7 || file < 0 || file > 7) return null;
+            const fileChar = String.fromCharCode('a'.charCodeAt(0) + file);
+            const rankNum = 8 - rank;
+            return `${fileChar}${rankNum}`;
+        }
+        
+        const ROOK_DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+        const BISHOP_DIRECTIONS = [[1, 1], [1, -1], [-1, 1], [-1, -1]];
+        const KNIGHT_DIRECTIONS = [[2, 1], [2, -1], [-2, 1], [-2, -1], [1, 2], [1, -2], [-1, 2], [-1, -2]];
+
+
+        /** Helper for slider pieces (Queen, Rook, Bishop) */
+        function calculateSliderMoves(startCoords, directions, board, stopAtBlocker = true) {
+            const moves = [];
+            const [startRank, startFile] = startCoords;
+            for (const [rStep, fStep] of directions) {
+                let currentRank = startRank + rStep;
+                let currentFile = startFile + fStep;
+                
+                while (currentRank >= 0 && currentRank < 8 && currentFile < 8 && currentFile >= 0) {
+                    const targetId = getSquareId(currentRank, currentFile);
+                    if (!targetId) break;
+                    
+                    const pieceAtTarget = board[targetId];
+                    
+                    if (pieceAtTarget !== PIECES.EMPTY) {
+                        // This piece acts as a blocker (either for Queen movement or for enemy attack lines)
+                        // In V5, only ENEMY pieces are hard blockers
+                        const isHardBlocker = ENEMY_PIECES.includes(pieceAtTarget);
+
+                        if (ENEMY_PIECES.includes(pieceAtTarget)) {
+                            // Enemy piece (can be captured/included in attack line)
+                            moves.push(targetId); 
+                            if (stopAtBlocker) break; 
+                        } 
+                        
+                        if (isHardBlocker && stopAtBlocker) break;
+                        
+                        // If it's a Heart, it's not a hard blocker, so we continue.
+                        
+                    }
+                    
+                    // If empty or Heart piece
+                    if (pieceAtTarget === PIECES.EMPTY || pieceAtTarget === PIECES.HEART) {
+                        moves.push(targetId);
+                    }
+
+
+                    currentRank += rStep;
+                    currentFile += fStep;
+                }
+            }
+            // Filter duplicates if any
+            return [...new Set(moves)]; 
+        }
+        
+        /** Helper for jumper pieces (Knight) */
+        function calculateJumperMoves(startCoords, directions) {
+            const moves = [];
+            const [startRank, startFile] = startCoords;
+            for (const [rStep, fStep] of directions) {
+                const targetRank = startRank + rStep;
+                const targetFile = startFile + fStep;
+                
+                const targetId = getSquareId(targetRank, targetFile);
+                if (targetId) {
+                    moves.push(targetId);
+                }
+            }
+            return moves;
+        }
+
+
+        /** Calculates all legal target squares for the Queen. */
+        function getQueenTargetSquares(startId) {
+            const targets = {};
+            const start = getCoords(startId);
+            if (!start) return targets;
+            
+            const directions = [...ROOK_DIRECTIONS, ...BISHOP_DIRECTIONS];
+            
+            for (const targetId of calculateSliderMoves(start, directions, boardState, true)) {
+                 const piece = boardState[targetId];
+                 
+                 // No Blockers in V5, so we only check standard pieces
+                 
+                 if (piece === PIECES.EMPTY) {
+                    targets[targetId] = 'move';
+                 } else if (piece === PIECES.HEART) {
+                    targets[targetId] = 'heart'; // Special move type for heart
+                 } else if (ENEMY_PIECES.includes(piece)) {
+                    // This is a black piece -> capture!
+                    targets[targetId] = 'capture';
+                 }
+            }
+            return targets;
+        }
+
+        /** Returns an array of all squares attacked by a given piece type at a given position. */
+        function getAttacksFromPiece(attackerId, pieceType, board) {
+            const start = getCoords(attackerId);
+            if (!start) return [];
+            
+            if (pieceType === PIECES.BLACK_PAWN) {
+                // Pawns attack diagonally 'down' (increasing rank index, lower rank number)
+                const [startRank, startFile] = start;
+                const attackingRank = startRank + 1; 
+                const potentialTargets = [
+                    getSquareId(attackingRank, startFile - 1), 
+                    getSquareId(attackingRank, startFile + 1)
+                ];
+                return potentialTargets.filter(id => id);
+            } else if (pieceType === PIECES.BLACK_BISHOP || pieceType === PIECES.BLACK_ROOK) {
+                // For attack calculation, we need to know all squares attacked, and stop at hard blockers (enemy pieces)
+                return calculateSliderMoves(start, pieceType === PIECES.BLACK_BISHOP ? BISHOP_DIRECTIONS : ROOK_DIRECTIONS, board, true); 
+            } else if (pieceType === PIECES.BLACK_KNIGHT) {
+                return calculateJumperMoves(start, KNIGHT_DIRECTIONS);
+            }
+            return [];
+        }
+        
+        /** Returns an array of all threatened square IDs on the board. */
+        function getAllThreatenedSquares() {
+            const threatened = new Set();
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    const attackerId = getSquareId(r, f);
+                    const piece = boardState[attackerId];
+                    
+                    if (ENEMY_PIECES.includes(piece)) {
+                        const attacks = getAttacksFromPiece(attackerId, piece, boardState);
+                        
+                        attacks.forEach(id => {
+                            const targetPiece = boardState[id];
+                            
+                            // Check if the target is attacked AND not currently blocked by another black piece
+                            if (isSquareAttackedByPiece(id, attackerId, piece, boardState)) {
+                                 // We only care if the target is the Queen's current position, or a square she might move to
+                                if (targetPiece === PIECES.EMPTY || targetPiece === PIECES.WHITE_QUEEN || targetPiece === PIECES.HEART) {
+                                     threatened.add(id);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            return Array.from(threatened);
+        }
+
+        /** Checks if a specific square is attacked by a specific piece (handling blockers). */
+        function isSquareAttackedByPiece(targetId, attackerId, pieceType, board) {
+            if (pieceType === PIECES.BLACK_KNIGHT || pieceType === PIECES.BLACK_PAWN) {
+                // Jumpers/Pawn attacks are simple reach checks
+                const attacks = getAttacksFromPiece(attackerId, pieceType, board);
+                return attacks.includes(targetId);
+            }
+            
+            // For slider pieces (Rook/Bishop), we must check the path
+            if (pieceType === PIECES.BLACK_BISHOP || pieceType === PIECES.BLACK_ROOK) {
+                 const startCoords = getCoords(attackerId);
+                 const targetCoords = getCoords(targetId);
+                 if (!startCoords || !targetCoords) return false;
+                 
+                 const [startRank, startFile] = startCoords;
+                 const [targetRank, targetFile] = targetCoords;
+                 
+                 const rankDiff = targetRank - startRank;
+                 const fileDiff = targetFile - startFile;
+                 
+                 // If not aligned, return false
+                 if (pieceType === PIECES.BLACK_ROOK && !(rankDiff === 0 || fileDiff === 0)) return false;
+                 if (pieceType === PIECES.BLACK_BISHOP && Math.abs(rankDiff) !== Math.abs(fileDiff)) return false;
+                 
+                 if (rankDiff === 0 && fileDiff === 0) return false;
+
+                 const rStep = rankDiff === 0 ? 0 : (rankDiff > 0 ? 1 : -1);
+                 const fStep = fileDiff === 0 ? 0 : (fileDiff > 0 ? 1 : -1);
+
+                 let currentRank = startRank + rStep;
+                 let currentFile = startFile + fStep;
+
+                 while (getSquareId(currentRank, currentFile) !== targetId) {
+                     const pathPiece = board[getSquareId(currentRank, currentFile)];
+                     // In V5, only EMPTY or HEART do not block enemy pieces
+                     if (pathPiece !== PIECES.EMPTY && pathPiece !== PIECES.HEART) {
+                         return false; // Path is blocked
+                     }
+                     currentRank += rStep;
+                     currentFile += fStep;
+                 }
+                 return true; // Path is clear up to target
+            }
+            return false;
+        }
+
+        /** Finds and returns the ID of a piece currently attacking the target. */
+        function findAttackingPiece(targetId, board = boardState) {
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    const attackerId = getSquareId(r, f);
+                    const piece = board[attackerId];
+                    
+                    if (ENEMY_PIECES.includes(piece)) {
+                        if (isSquareAttackedByPiece(targetId, attackerId, piece, board)) {
+                             return attackerId;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+
+        // --- DYNAMIC/INFINITE LEVEL GENERATION (WITH NO MUTUAL DEFENSE) ---
+        
+        /**
+         * Generates the configuration for a random level based on the current level index.
+         * Enforces the No Mutual Defense rule.
+         */
+        function generateRandomLevel(levelIndex) {
+            const levelNum = levelIndex + 1;
+            
+            // Scaling Logic for ENEMY PIECES
+            let numPawns = Math.min(8, 2 + Math.floor(levelNum / 2)); 
+            let numBishops = levelNum >= 5 ? Math.min(2, 1 + Math.floor((levelNum - 5) / 6)) : 0;
+            let numKnights = levelNum >= 8 ? Math.min(2, 1 + Math.floor((levelNum - 8) / 7)) : 0;
+            let numRooks = levelNum >= 12 ? Math.min(2, 1 + Math.floor((levelNum - 12) / 8)) : 0;
+            
+            // Total number of black pieces to place
+            const pieceCounts = {
+                [PIECES.BLACK_PAWN]: numPawns,
+                [PIECES.BLACK_BISHOP]: numBishops,
+                [PIECES.BLACK_KNIGHT]: numKnights,
+                [PIECES.BLACK_ROOK]: numRooks,
+            };
+
+            const allPossibleSquares = [];
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    allPossibleSquares.push(getSquareId(r, f));
+                }
+            }
+            
+            const usedSquares = new Set();
+            const newPieces = {};
+            let tempBoard = {};
+
+            // 1. Place Queen randomly
+            const queenIndex = Math.floor(Math.random() * allPossibleSquares.length);
+            const queenId = allPossibleSquares[queenIndex];
+            usedSquares.add(queenId);
+            tempBoard[queenId] = PIECES.WHITE_QUEEN;
+            
+            // 2. Place Black Pieces (respecting the No Mutual Defense Rule)
+            const pieceTypesToPlace = Object.keys(pieceCounts).filter(type => pieceCounts[type] > 0);
+            
+            for (const pieceType of pieceTypesToPlace) {
+                const count = pieceCounts[pieceType];
+                
+                if (count > 0) {
+                    newPieces[pieceType] = [];
+                    
+                    for (let i = 0; i < count; i++) {
+                        let placed = false;
+                        const MAX_ATTEMPTS = 150; 
+                        let attempts = 0;
+                        let squareId = null;
+
+                        while (!placed && attempts < MAX_ATTEMPTS) {
+                            const availableSquares = allPossibleSquares.filter(id => !usedSquares.has(id));
+                            if (availableSquares.length === 0) break; 
+                            
+                            const randomIndex = Math.floor(Math.random() * availableSquares.length);
+                            squareId = availableSquares[randomIndex];
+                            
+                            // TEMPORARY BOARD CHECK
+                            tempBoard[squareId] = pieceType; 
+                            
+                            // CRITERIA 1: Check if the new piece attacks the Queen's STARTING position
+                            const attacksQueen = findAttackingPiece(queenId, tempBoard); 
+
+                            // CRITERIA 2 (NO MUTUAL DEFENSE): Check if the new piece is defended by ANY existing black piece
+                            let isDefended = false;
+                            for (const existingPieceType in newPieces) {
+                                if (ENEMY_PIECES.includes(existingPieceType)) {
+                                    newPieces[existingPieceType].forEach(existingSquareId => {
+                                        const existingPiece = tempBoard[existingSquareId];
+                                        // Check if existing piece attacks the new square
+                                         if (
+                isSquareAttackedByPiece(squareId, existingSquareId, existingPiece, tempBoard) ||
+                isSquareAttackedByPiece(existingSquareId, squareId, pieceType, tempBoard)
+            ) {
+                isDefended = true;
+                                        }
+                                    });
+                                }
+                            }
+                            
+                            // Check if the placement is valid
+                            const isValid = !attacksQueen && !isDefended;
+                            
+                            if (isValid) {
+                                newPieces[pieceType].push(squareId);
+                                usedSquares.add(squareId);
+                                placed = true;
+                            } else {
+                                // Invalid placement, clear temp piece and retry
+                                tempBoard[squareId] = PIECES.EMPTY; 
+                            }
+                            attempts++;
+                        }
+                         // If placement failed, ensure temp board is clean for the next piece type
+                        if (!placed && squareId) {
+                            tempBoard[squareId] = PIECES.EMPTY;
+                        }
+                    }
+                }
+            }
+
+            // 3. Add Heart Piece (if applicable)
+            if (levelNum % 5 === 0 && lives < STARTING_LIVES) {
+                let heartPlaced = false;
+                let attempts = 0;
+                while (!heartPlaced && attempts < 50) {
+                    const availableSquares = allPossibleSquares.filter(id => !usedSquares.has(id));
+                    if (availableSquares.length === 0) break; 
+                    
+                    const randomIndex = Math.floor(Math.random() * availableSquares.length);
+                    const squareId = availableSquares[randomIndex];
+                    
+                    if (!newPieces[PIECES.HEART]) newPieces[PIECES.HEART] = [];
+                    newPieces[PIECES.HEART].push(squareId);
+                    usedSquares.add(squareId);
+                    heartPlaced = true;
+                    attempts++;
+                }
+            }
+
+            return { 
+                queen: queenId, 
+                pieces: newPieces
+            };
+        }
+
+        // --- GAME LOGIC ---
+        
+        function goToNextLevel() {
+            hideMessage(); 
+            currentLevelIndex++;
+            // Load the new, dynamically generated level. Lives are NOT reset.
+            initLevel(generateRandomLevel(currentLevelIndex), false); 
+        }
+
+        /**
+         * Initializes or restarts the current level.
+         */
+        function initLevel(levelData = null, isNewGame = false) {
+            movesCount = 0; 
+            selectedSquareId = null; 
+            isGameReady = true;
+            isHelpActive = false; 
+
+            // 1. Store/Use Level Data
+            if (levelData) {
+                currentLevelData = levelData;
+            }
+            
+            const levelToLoad = currentLevelData;
+
+            // 2. Manage Score/Lives on New Game
+            if (isNewGame) { 
+                lives = STARTING_LIVES; 
+                totalScore = STARTING_SCORE; 
+            }
+            // Preserve the current total score, but track it for level restart
+            scoreAtStartOfLevel = totalScore; 
+
+            // 3. Clear and place pieces
+            boardState = {};
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    boardState[getSquareId(r, f)] = PIECES.EMPTY;
+                }
+            }
+            
+            queenPosition = levelToLoad.queen;
+            boardState[queenPosition] = PIECES.WHITE_QUEEN;
+
+            const pieces = levelToLoad.pieces;
+            for (const pieceType in pieces) {
+                if (pieces.hasOwnProperty(pieceType)) {
+                    pieces[pieceType].forEach(id => {
+                        boardState[id] = pieceType;
+                    });
+                }
+            }
+            
+            updateThreatButtonState();
+            updateStatus();
+            renderBoard();
+        }
+        
+        function initGame() {
+            currentLevelIndex = 0;
+            // Start a new game: generate new level, reset lives and score
+            initLevel(generateRandomLevel(currentLevelIndex), true); 
+        }
+
+        function updateStatus() {
+            levelDisplay.textContent = currentLevelIndex + 1;
+            movesDisplay.textContent = movesCount;
+            scoreDisplay.textContent = totalScore;
+            
+            // Display lives as heart icons
+            const heartsHtml = Array.from({ length: STARTING_LIVES }, (_, i) => {
+                return `<i class="fas fa-heart ${i < lives ? 'text-red-500' : 'text-gray-400 opacity-50'}"></i>`;
+            }).join('');
+            livesDisplay.innerHTML = heartsHtml;
+        }
+
+        function checkWin() {
+            const remainingPieces = Object.values(boardState).filter(p => ENEMY_PIECES.includes(p)).length;
+            
+            if (remainingPieces === 0) {
+                isGameReady = false; 
+                updateStatus();
+
+                playSound('victory');
+                triggerConfetti();
+                
+                let message = `¡Nivel ${currentLevelIndex + 1} completado! Puntuación actual: **${totalScore}**. ¡Preparando el siguiente desafío!`;
+
+                showMessage('¡Victoria!', message, 'green');
+                // Automatic transition after 2.5 seconds
+                setTimeout(goToNextLevel, 2500); 
+                
+                return true;
+            }
+            return false;
+        }
+
+        /** Handles the special case of capturing the Heart piece */
+        function handleHeartCapture(startId, targetId) {
+            let message, type;
+
+            if (lives < STARTING_LIVES) {
+                lives = Math.min(STARTING_LIVES, lives + 1);
+                totalScore += PIECE_VALUES[PIECES.HEART]; // Add score bonus
+                message = `¡Has capturado un Corazón! **+1 Vida** y **+10 Puntos**. Tienes ${lives} vidas.`;
+                type = 'green';
+                playSound('lifeUp');
+                
+            } else {
+                // Already at max lives, just get the score bonus
+                totalScore += PIECE_VALUES[PIECES.HEART];
+                message = `Ya tienes la vida al máximo. ¡Has ganado **+10 Puntos** de bonificación!`;
+                type = 'gold';
+                playSound('move');
+            }
+            
+            movesCount++;
+            boardState[targetId] = PIECES.WHITE_QUEEN; 
+            boardState[startId] = PIECES.EMPTY; 
+            queenPosition = targetId;
+            selectedSquareId = null;
+            
+            updateStatus();
+            renderBoard();
+
+            showMessage('¡Corazón!', message, type);
+
+            // Hide the message after 1.5 seconds if the level isn't over
+            if (!checkWin()) {
+                setTimeout(hideMessage, 1500); 
+            }
+        }
+
+        /** * Handles loss by Queen capture, DECREMENTS GLOBAL LIVES, and restarts the current level. */
+        function handleLoss(attackerId, targetId) {
+            isGameReady = false;
+            selectedSquareId = null; 
+            
+            const attackerPieceType = boardState[attackerId];
+
+            // 1. Decrement global lives
+            lives--; 
+            updateStatus();
+
+            // 2. Loss Visualization (Flash attacker, animate capture)
+            const tempBoardState = {...boardState};
+            tempBoardState[queenPosition] = PIECES.EMPTY; 
+            tempBoardState[attackerId] = PIECES.EMPTY; 
+            tempBoardState[targetId] = attackerPieceType; 
+            
+            renderBoard(tempBoardState, true, attackerId); 
+            
+            // 3. Play Defeat Sound
+            playSound('defeat');
+            
+            setTimeout(() => {
+                if (lives > 0) {
+                    // --- Loss of Life (Restart Level) ---
+                    totalScore = scoreAtStartOfLevel; // Restore score to level start
+                    updateStatus();
+                    
+                    const levelNum = currentLevelIndex + 1;
+                    const message = `¡La Dama ha sido capturada al moverse a una casilla atacada! Te quedan **${lives}** vidas. Reiniciando el Nivel ${levelNum}.`;
+                    showMessage('¡CAPTURADA!', message, 'red');
+                    
+                    setTimeout(() => {
+                         hideMessage();
+                         initLevel(null, false); 
+                    }, 2000); 
+
+                } else {
+                    // --- Total Defeat (Game Over) ---
+                    const finalScore = totalScore;
+                    
+                    const levelNum = currentLevelIndex + 1;
+                    const message = `¡Has perdido tu última vida en el Nivel ${levelNum}! Tu **PUNTUACIÓN FINAL** es: **${finalScore}** puntos.`;
+                    showMessage('¡DERROTA TOTAL!', message, 'red');
+
+                    setTimeout(initGame, 3000);
+                }
+            }, 3000); // 3-second delay for loss visualization and message
+        }
+        
+        /** Handles loss by score drop (always triggers full game reset). */
+        function handleScoreLoss() {
+             const finalScore = totalScore;
+             
+             // Temporarily set lives to 0 for display
+             lives = 0; 
+             updateStatus();
+             isGameReady = false;
+             
+             const levelNum = currentLevelIndex + 1;
+             showMessage('¡Puntuación Agotada!', `Tu puntuación ha caído a 0 o menos en el Nivel ${levelNum}. Tu **PUNTUACIÓN FINAL** es: **${finalScore}** puntos. ¡El juego se reiniciará!`, 'red');
+             
+             setTimeout(initGame, 1500);
+             return;
+        }
+
+
+        function executeMove(startId, targetId, moveType) {
+            // 1. Check for immediate loss condition (Queen moves to threatened square)
+            const attackerId = findAttackingPiece(targetId);
+            if (attackerId) {
+                 handleLoss(attackerId, targetId); 
+                 return;
+            } 
+            
+            // If help mode is active, disable it on successful move
+            if (isHelpActive) {
+                toggleThreatDisplay();
+            }
+            
+            // 2. Handle special heart capture
+            if (moveType === 'heart') {
+                handleHeartCapture(startId, targetId);
+                return;
+            }
+
+            // 3. Perform the safe standard move/capture
+            const pieceAtTarget = boardState[targetId];
+
+            if (ENEMY_PIECES.includes(pieceAtTarget)) {
+                // Standard black piece capture
+                const pieceValue = PIECE_VALUES[pieceAtTarget] || 0;
+                totalScore += pieceValue;
+                movesCount++;
+                
+                boardState[targetId] = PIECES.EMPTY; 
+                playSound('capture');
+            } else {
+                // Non-capture move (empty square move)
+                totalScore += SCORE_PER_MOVE; 
+                movesCount++;
+                playSound('move');
+            }
+
+            // Safe move finalization
+            boardState[targetId] = PIECES.WHITE_QUEEN; 
+            boardState[startId] = PIECES.EMPTY; 
+            queenPosition = targetId;
+            
+            // Loss Condition 2: Score drop to 0 or below (Triggers full game reset)
+            if (totalScore <= 0) {
+                 handleScoreLoss();
+                 return;
+            }
+
+            selectedSquareId = null; 
+
+            updateStatus();
+            renderBoard();
+            checkWin();
+        }
+        
+        function handleSquareClick(event) {
+            if (!isGameReady) return;
+            const targetId = event.currentTarget.id;
+            
+            const currentPossibleMoves = getQueenTargetSquares(queenPosition);
+
+            // Case 1: Clicked on the Queen. Toggle selection.
+            if (targetId === queenPosition) {
+                selectedSquareId = (selectedSquareId === targetId) ? null : targetId;
+                playSound('move'); 
+                renderBoard();
+                return;
+            }
+            
+            // Case 2 (CLICK-TO-MOVE): Clicked on a valid target square (green dot or red ring).
+            if (currentPossibleMoves[targetId]) {
+                 const moveType = currentPossibleMoves[targetId];
+                 executeMove(queenPosition, targetId, moveType);
+                 return;
+            } 
+            
+            // Case 3: Clicked on an invalid square or nothing selected
+            playSound('error');
+            selectedSquareId = null; 
+            renderBoard(); // Clear any existing selection
+        }
+
+        // --- RENDERING ---
+
+        function updateThreatButtonState() {
+            if (isHelpActive) {
+                threatToggleButton.classList.add('bg-amber-500', 'hover:bg-amber-600', 'ring-2', 'ring-amber-300');
+                threatToggleButton.classList.remove('bg-lime-500', 'hover:bg-lime-600');
+            } else {
+                threatToggleButton.classList.add('bg-lime-500', 'hover:bg-lime-600');
+                threatToggleButton.classList.remove('bg-amber-500', 'hover:bg-amber-600', 'ring-2', 'ring-amber-300');
+            }
+        }
+
+        function toggleThreatDisplay() {
+            isHelpActive = !isHelpActive;
+            updateThreatButtonState();
+            renderBoard();
+        }
+
+
+        function createBoard() {
+            for (let r = 0; r < 8; r++) { 
+                for (let f = 0; f < 8; f++) {
+                    const squareId = getSquareId(r, f);
+                    const isLight = (r + f) % 2 === 0;
+                    
+                    const squareDiv = document.getElementById(squareId) || document.createElement('div');
+                    squareDiv.id = squareId;
+                    squareDiv.className = `square ${isLight ? 'bg-chess-light' : 'bg-chess-dark'}`;
+                    squareDiv.dataset.id = squareId;
+                    
+                    squareDiv.removeEventListener('click', handleSquareClick); 
+                    squareDiv.addEventListener('click', handleSquareClick); 
+
+                    if (!document.getElementById(squareId)) {
+                        chessboardElement.appendChild(squareDiv);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Renders the current board state.
+         */
+        function renderBoard(state = boardState, isLossAnimation = false, attackerStartId = null) {
+            const currentBoard = state;
+            const isQueenSelected = isGameReady && selectedSquareId === queenPosition;
+            const movesToHighlight = isQueenSelected ? getQueenTargetSquares(queenPosition) : {};
+            const threatenedSquares = isHelpActive && !isLossAnimation ? getAllThreatenedSquares() : [];
+
+            for (let r = 0; r < 8; r++) {
+                for (let f = 0; f < 8; f++) {
+                    const squareId = getSquareId(r, f);
+                    const squareDiv = document.getElementById(squareId);
+                    const piece = currentBoard[squareId];
+                    const isLight = (r + f) % 2 === 0;
+
+                    // 1. Reset base style and remove temporary/highlight classes
+                    squareDiv.className = `square`; 
+                    squareDiv.classList.add(isLight ? 'bg-chess-light' : 'bg-chess-dark');
+                    squareDiv.style.backgroundColor = ''; 
+                    squareDiv.classList.remove('highlight', COLOR_MOVE, COLOR_CAPTURE, 'attacker-flash');
+                    
+                    // 2. Apply threat highlight if help is active and not in loss animation
+                    if (isHelpActive && threatenedSquares.includes(squareId)) { 
+                        squareDiv.style.backgroundColor = COLOR_THREATENED;
+                    }
+
+                    // 3. Apply possible move highlights (always highlight if Queen is selected)
+                    if (!isLossAnimation && movesToHighlight[squareId]) {
+                       squareDiv.classList.add('highlight');
+                       squareDiv.classList.add(movesToHighlight[squareId] === 'move' ? COLOR_MOVE : COLOR_CAPTURE);
+                    }
+                    
+                    // 4. Highlight the Queen's own square ONLY if selected 
+                    if (squareId === queenPosition && piece === PIECES.WHITE_QUEEN && isQueenSelected && !isLossAnimation) {
+                         squareDiv.style.backgroundColor = tailwind.config.theme.extend.colors['selected'];
+                    }
+
+                    // 5. Render piece
+                    let pieceElement = squareDiv.querySelector('.piece');
+                    if (piece) {
+                        if (!pieceElement) {
+                            pieceElement = document.createElement('i');
+                            pieceElement.classList.add('piece');
+                            squareDiv.appendChild(pieceElement);
+                        }
+                        
+                        // Update classes and position 
+                        pieceElement.className = `piece ${piece}`;
+                        
+                        if (piece === PIECES.WHITE_QUEEN) {
+                            pieceElement.classList.add('text-white'); 
+                        } else if (piece === PIECES.HEART) {
+                            pieceElement.classList.add('text-heart-piece'); // Custom color for heart
+                        } else { 
+                            // Enemy piece (Black Pawn, Rook, Knight, Bishop)
+                            pieceElement.classList.add('text-black', 'opacity-85'); 
+                        }
+                        
+                        // 6. Apply flash to attacker piece during loss animation
+                        if (isLossAnimation && squareId === attackerStartId) {
+                             squareDiv.classList.add('attacker-flash');
+                             pieceElement.remove(); 
+                        }
+                        
+                    } else {
+                        // Clear piece if square is empty
+                        if (pieceElement) {
+                           pieceElement.remove();
+                        }
+                    }
+                }
+            }
+        }
+        
+        // --- MODAL & EVENTS ---
+
+        function showMessage(title, message, type) {
+            modalTitle.textContent = title;
+            modalMessage.innerHTML = message; 
+            
+            modalTitle.className = 'text-2xl font-bold mb-3';
+            modalTitle.classList.remove('text-green-600', 'text-yellow-600', 'text-red-600', 'text-yellow-800', 'text-blue-600'); 
+            
+            if (type === 'green') {
+                modalTitle.classList.add('text-green-600');
+            } else if (type === 'yellow') {
+                 modalTitle.classList.add('text-yellow-600');
+            } else if (type === 'red') {
+                 modalTitle.classList.add('text-red-600');
+            } else if (type === 'gold') {
+                 modalTitle.classList.add('text-yellow-800');
+            } else if (type === 'info') {
+                 modalTitle.classList.add('text-blue-600');
+            }
+
+            messageModal.classList.remove('hidden');
+        }
+
+        function showHelpModal() {
+            const title = "**Instrucciones Rápidas**";
+            const message = `
+                <p class="text-left mb-4">El objetivo es **capturar todas las piezas negras** sin que la Dama (Reina Blanca) caiga en una casilla **amenazada**.</p>
+                
+                <h4 class="text-lg font-semibold text-gray-800 text-left mb-2">**Reglas Clave**</h4>
+                <ul class="list-disc list-inside text-left mb-4 space-y-1 ml-4">
+                    <li>**Movimiento:** La Dama debe moverse solo a casillas **verdes** (movimiento) o **rojas** (captura/corazón).</li>
+                    <li>**Sin Defensa Mutua:** Ninguna pieza negra puede proteger a otra pieza negra.</li>
+                    <li>**Corazón (<i class="fas fa-heart text-heart-piece"></i>):** Aparece cada 5 niveles. Al capturarlo, recuperas **1 vida** (máx. 3) y obtienes **+10 Puntos**.</li>
+                    <li>**Pérdida de Vida:** Mover a una casilla **amenazada** (naranja si la ayuda está activa) resulta en **-1 vida**.</li>
+                    <li>**Vidas:** Tienes **3 vidas** (<i class="fas fa-heart text-red-500"></i>) para toda la partida.</li>
+                </ul>
+                
+                <h4 class="text-lg font-semibold text-gray-800 text-left mb-2">**Puntuación y Derrota**</h4>
+                <ul class="list-disc list-inside text-left mb-4 space-y-1 ml-4">
+                    <li>**Movimiento:** Sin captura: **-1 punto**. Con captura: **+1 a +5 puntos**.</li>
+                    <li>**Derrota Total:** Al perder la última vida o al llegar a **0 puntos**, el juego se reinicia.</li>
+                </ul>
+                
+                <div class="mt-4 pt-4 border-t border-gray-100">
+                    <p class="text-sm text-gray-600 italic">Usa el botón **Ojo (<i class="fas fa-eye"></i>)** para ver todas las amenazas del tablero (**Naranja**).</p>
+                </div>
+            `;
+            modalTitle.textContent = title; 
+            modalMessage.innerHTML = message;
+            
+            modalTitle.className = 'text-2xl font-bold mb-3 text-blue-600';
+
+            messageModal.classList.remove('hidden');
+        }
+
+        function hideMessage() {
+            messageModal.classList.add('hidden');
+        }
+
+        // --- EVENT LISTENERS ---
+
+        soundToggleButton.addEventListener('click', () => {
+            isSoundOn = !isSoundOn;
+            if (isSoundOn) {
+                soundIcon.classList.remove('fa-volume-mute');
+                soundIcon.classList.add('fa-volume-up');
+                if (Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+            } else {
+                soundIcon.classList.remove('fa-volume-up');
+                soundIcon.classList.add('fa-volume-mute');
+            }
+        });
+        
+        soundSetSelector.addEventListener('change', (event) => {
+            currentSoundSet = event.target.value;
+            setSynthProperties(); 
+            playSound('move'); 
+        });
+        
+        // Threat Toggle button (Eye icon)
+        threatToggleButton.addEventListener('click', () => {
+             if (!messageModal.classList.contains('hidden')) {
+                 hideMessage();
+             }
+             toggleThreatDisplay();
+        }); 
+
+        // Info Button
+        infoButton.addEventListener('click', showHelpModal);
+
+        // Reset Level Button (Undo) - Restarts current level, restores score, but keeps global lives
+        resetButton.addEventListener('click', () => {
+            totalScore = scoreAtStartOfLevel; 
+            updateStatus();
+            initLevel(null, false); 
+            showMessage('Nivel Reiniciado', `El Nivel ${currentLevelIndex + 1} se ha reiniciado. Tu puntuación ha vuelto a **${totalScore}** (puntuación al inicio del nivel).`, 'info');
+        });
+        
+        // Reset Game Button (Redo/Start Over) - Resets all game state
+        resetGameButton.addEventListener('click', () => {
+            initGame();
+            showMessage('Juego Reiniciado', `¡El juego ha sido reiniciado! Estás de vuelta en el Nivel 1. Vidas y Puntuación restablecidas a **${STARTING_LIVES}** y **${STARTING_SCORE}**.`, 'info');
+        });
+        
+        modalCloseButton.addEventListener('click', hideMessage);
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            createBoard();
+            setSynthProperties(); 
+            initGame(); 
+        };
+
+    </script>
+</body>
+</html>
